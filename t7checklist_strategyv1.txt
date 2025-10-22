@@ -1,6 +1,6 @@
 // © Mr O
 //@version=6
-strategy("T7 Checklist Aligned Strategy v1.0", overlay=true, shorttitle="T7 Strat", default_qty_type=strategy.percent_of_equity, default_qty_value=10, initial_capital=10000)
+strategy("T7 Checklist Aligned Strategy v1.1 (Fixed for Signals)", overlay=true, shorttitle="T7 Strat v1.1", default_qty_type=strategy.percent_of_equity, default_qty_value=10, initial_capital=10000)
 
 //──────────────────────────────────────────────
 // ✳️ INPUTS
@@ -14,6 +14,9 @@ use4HFilter  = input.bool(true, "Use 4H Bias Filter?")
 use1HConfirm = input.bool(true, "Use 1H Confirmation?")
 showEmojis   = input.bool(true, "Show Mood Emojis?")
 showPanel    = input.bool(true, "Show Status Panel?")
+rsiBullThresh = input.float(50, "4H RSI Bull Threshold (Loosened from 55)")
+rsiBearThresh = input.float(50, "4H RSI Bear Threshold (Loosened from 45)")
+maxBarsInTrade = input.int(20, "Max Bars in Trade (Time Exit)")
 
 // MACD Params (standard)
 macdFast = 12
@@ -36,7 +39,7 @@ avgRange = ta.sma(rangeNow, rangeLen)
 tinyRange = rangeNow < avgRange * 0.8
 wideRange = rangeNow > avgRange * 1.2
 
-// Bounce Conditions (15M Entry Zone)
+// Bounce Conditions (15M Entry Zone) - Oversold for Longs
 oversoldBounce = ta.crossover(rsi, 30)  // Cross into 30-40 from below
 rsiOversoldZone = rsi >= 30 and rsi <= 40
 macdShrinkingRed = macdHist < 0 and macdHist > macdHist[1]  // Shrinking red bars
@@ -46,8 +49,12 @@ greenBar = close > open
 redBar = close < open
 higherVolConfirm = volume > volSMA
 
-// Combined Bounce Trigger
-bounceTrigger = oversoldBounce or (rsiOversoldZone and macdShrinkingRed and higherLow and volTickUp)
+// New: Overbought Rejection for Shorts
+overboughtRejection = ta.crossunder(rsi, 70) or (rsi >= 60 and rsi <= 70 and macdHist > 0 and macdHist < macdHist[1] and high < high[1] and volume > volume[1])
+
+// Combined Triggers (Direction-Aware)
+bounceTriggerLong = oversoldBounce or (rsiOversoldZone and macdShrinkingRed and higherLow and volTickUp)
+bounceTriggerShort = overboughtRejection or (rsi >= 60 and rsi <= 70 and macdHist > 0 and macdHist < macdHist[1] and high < high[1] and volTickUp)
 
 // Volume-Only Cross-Check
 volDemand = greenBar and higherVolConfirm  // Real demand
@@ -84,8 +91,8 @@ volConfirmBear_4h = request.security(syminfo.tickerid, "240", (volume > ta.sma(v
 
 macdBull_4h = macdHist_4h > 0
 macdBear_4h = macdHist_4h < 0
-rsiBull_4h = rsi_4h > 55
-rsiBear_4h = rsi_4h < 45
+rsiBull_4h = rsi_4h > rsiBullThresh
+rsiBear_4h = rsi_4h < rsiBearThresh
 
 bullBias_4h = use4HFilter ? (macdBull_4h and rsiBull_4h and volConfirmBull_4h) : true
 bearBias_4h = use4HFilter ? (macdBear_4h and rsiBear_4h and volConfirmBear_4h) : true
@@ -93,11 +100,11 @@ bearBias_4h = use4HFilter ? (macdBear_4h and rsiBear_4h and volConfirmBear_4h) :
 //──────────────────────────────────────────────
 // ⚡ TRADE SIGNALS (Aligned Flow)
 //──────────────────────────────────────────────
-// Long: Bull bias + 1H bull confirm + 15M bounce + vol demand
-longValid = bullBias_4h and bullConfirm_1h and bounceTrigger and volDemand
+// Long: Bull bias + 1H bull confirm + 15M bounce (long) + vol demand
+longValid = bullBias_4h and bullConfirm_1h and bounceTriggerLong and volDemand
 
-// Short: Bear bias + 1H bear confirm + 15M bounce (probe fail) + vol pressure
-shortValid = bearBias_4h and bearConfirm_1h and bounceTrigger and volPressure
+// Short: Bear bias + 1H bear confirm + 15M bounce (short) + vol pressure
+shortValid = bearBias_4h and bearConfirm_1h and bounceTriggerShort and volPressure
 
 // Avoid signals in indecision
 longValid := longValid and not indecision
@@ -113,12 +120,16 @@ if longValid
 if shortValid
     strategy.entry("Short", strategy.short)
 
-// Exits: Close on opposite signal
+// Exits: Close on opposite signal + Time-based
 if shortValid and strategy.position_size > 0
     strategy.close("Long")
 
 if longValid and strategy.position_size < 0
     strategy.close("Short")
+
+// Time Exit
+if strategy.position_size != 0 and barssince(strategy.opentrades.entry_bar_index(0)) > maxBarsInTrade
+    strategy.close_all("Time Exit")
 
 // Optional: Add basic TP/SL (uncomment and adjust)
 // strategy.exit("Long TP/SL", "Long", profit=2, loss=1)  // 2:1 RR in %
@@ -149,6 +160,12 @@ plotshape(shortValid, "Short Entry", shape.triangledown, location.abovebar, colo
 // Plot SMA20
 plot(sma20, "20 SMA", color=color.new(color.blue, 0), linewidth=2)
 
+// Debug Plots (for Data Window: Hover to see values/counts)
+plot(bullBias_4h ? 1 : 0, "4H Bull Bias", color=color.new(color.green, 0), display=display.data_window)
+plot(bearBias_4h ? -1 : 0, "4H Bear Bias", color=color.new(color.red, 0), display=display.data_window)
+plot(bounceTriggerLong ? 2 : 0, "Bounce Long", color=color.new(color.blue, 0), display=display.data_window)
+plot(bounceTriggerShort ? -2 : 0, "Bounce Short", color=color.new(color.orange, 0), display=display.data_window)
+
 //──────────────────────────────────────────────
 // 🧭 STATUS PANEL (Mood & Bias)
 //──────────────────────────────────────────────
@@ -163,7 +180,7 @@ if showPanel
     confirmInner = bearConfirm_1h ? "🔴 1H Bear OK" : "⚪ 1H Neutral"
     confirmTxt = bullConfirm_1h ? "🟢 1H Bull OK" : confirmInner
     
-    entryTxt = bounceTrigger ? "📍 Bounce Zone" : "⏳ No Trigger"
+    entryTxt = bounceTriggerLong or bounceTriggerShort ? "📍 Bounce Zone" : "⏳ No Trigger"
     volDesc = higherVolConfirm ? "📈 Vol Up" : "📉 Vol Low"
     rangeDesc = tinyRange ? "tight" : wideRange ? "wide" : "normal"
     
@@ -185,4 +202,4 @@ if showPanel
 //──────────────────────────────────────────────
 alertcondition(longValid, "T7 Long Signal", "🟢 T7 Aligned: Bull Bias + 1H Confirm + 15M Bounce + Vol Demand")
 alertcondition(shortValid, "T7 Short Signal", "🔴 T7 Aligned: Bear Bias + 1H Confirm + 15M Bounce Probe Fail + Vol Pressure")
-alertcondition(bounceTrigger, "T7 Bounce Alert", "📍 15M Oversold Bounce Zone - Check Bias for Direction")
+alertcondition(bounceTriggerLong or bounceTriggerShort, "T7 Bounce Alert", "📍 15M Bounce Zone - Check Bias for Direction")
