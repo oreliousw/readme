@@ -1,148 +1,152 @@
-// © Mr O — v1.5: Light HTF for Low-Vol; 15M Optimized
-//@version=6
-strategy("T7 Checklist Aligned Strategy v1.5 (Light HTF)", overlay=true, shorttitle="T7 v1.5", default_qty_type=strategy.percent_of_equity, default_qty_value=10, initial_capital=10000)
+// © Mr O — v2.2 : Expanded Entry + Diagnostics (15 M Test)
+//@version=5
+strategy("T7 Checklist Aligned Strategy v2.2 (Expanded Entry)", overlay=true, shorttitle="T7 v2.2", default_qty_type=strategy.percent_of_equity, default_qty_value=10, initial_capital=10000)
 
 //──────────────────────────────────────────────
-// INPUTS
+// ✳️ INPUTS
 //──────────────────────────────────────────────
-smaLen       = input.int(20, "SMA Length")
-volLen       = input.int(20, "Volume SMA Length")
-rsiLen       = input.int(14, "RSI Length")
-maxVolMult   = input.float(1.3, "Max Vol Mult")
-minVolMult   = input.float(0.6, "Min Vol Mult (Adaptive)")
-rangeLen     = input.int(10, "Range Smoothing")
-use4HFilter  = input.bool(true, "Use 4H Bias?")
+smaLen = input.int(20, "SMA Length")
+volLen = input.int(20, "Volume SMA Length")
+rsiLen = input.int(14, "RSI Length")
+adxLen = input.int(14, "ADX Length (Regime)")
+minAdxEntry = input.float(0, "Min ADX for Entry (0 to Disable)")
+maxVolMult = input.float(1.3, "Max Vol Mult")
+minVolMult = input.float(0.6, "Min Vol Mult")
+rangeLen = input.int(10, "Range Smoothing")
+use4HFilter = input.bool(true, "Use 4H Bias?")
 use1HConfirm = input.bool(true, "Use 1H Confirm?")
-lightHTF     = input.bool(true, "Light HTF Mode? (RSI + SMA Only, Skip MACD/Vol)")
-debugMode    = input.bool(false, "Debug: No HTF + Loose?")
-useTPSL      = input.bool(true, "Use TP/SL?")
-useTrail     = input.bool(true, "Use Trailing?")
-tpPct        = input.float(1.5, "TP %")
-slPct        = input.float(2.5, "SL % (Looser for 15M)")
-trailPct     = input.float(0.5, "Trail %")
-rsiBullThresh = input.float(50, "RSI Bull Thresh")
-rsiBearThresh = input.float(50, "RSI Bear Thresh")
-rsiBounceLow = input.float(35, "Bounce Low")
-rsiBounceHigh = input.float(65, "Bounce High")
-maxBarsInTrade = input.int(30, "Max Bars (15M: ~7.5h)")
-useVolFilter = input.bool(false, "Use Vol Filter? (Off for Ranges)")
-showEmojis   = input.bool(true, "Emojis?")
-showPanel    = input.bool(true, "Panel?")
+regimeThresh = input.float(25, "ADX Thresh (Trend vs Range)")
+debugMode = input.bool(false, "Debug?")
+useTPSL = input.bool(true, "TP/SL?")
+useTrail = input.bool(true, "Trail?")
+tpPctTrend = input.float(2.0, "TP % Trend")
+tpPctRange = input.float(1.5, "TP % in Range")
+slPct = input.float(5.0, "SL %")
+trailPct = input.float(0.5, "Trail %")
+rsiBullThresh = input.float(30, "RSI Bull (Looser)")
+rsiBearThresh = input.float(70, "RSI Bear (Looser)")
+rsiBounceLow = input.float(40, "Bounce Low")
+rsiBounceHigh = input.float(60, "Bounce High")
+maxBarsTrend = input.int(100, "Max Bars Trend")
+maxBarsRange = input.int(400, "Max Bars Range")
+useVolFilter = input.bool(false, "Vol Filter?")
+useVolSpike = input.bool(true, "Vol Spike for Bias?")
+volSpikeThreshTrend = input.float(1.0, "Vol Spike Thresh Trend")
+volSpikeThreshRange = input.float(0.4, "Vol Spike Thresh Range")
+useVolBreakout = input.bool(true, "Vol Breakout for Entries?")
+volBreakoutThresh = input.float(1.08, "Vol Breakout Thresh (Expanded)")
+showEmojis = input.bool(true, "Emojis?")
+showPanel = input.bool(true, "Panel?")
 
-// MACD
+//──────────────────────────────────────────────
+// 📊 CORE CALCULATIONS
+//──────────────────────────────────────────────
 macdFast = 12
 macdSlow = 26
-macdSig  = 9
+macdSig = 9
+[diplus, diminus, adxVal] = ta.dmi(adxLen, adxLen)
+isTrend = adxVal > regimeThresh
+tpPct = isTrend ? tpPctTrend : tpPctRange
+maxBarsInTrade = isTrend ? maxBarsTrend : maxBarsRange
+volSpikeThresh = isTrend ? volSpikeThreshTrend : volSpikeThreshRange
 
-//──────────────────────────────────────────────
-// TRIGGERS
-//──────────────────────────────────────────────
 sma20 = ta.sma(close, smaLen)
-rsi   = ta.rsi(close, rsiLen)
+rsi = ta.rsi(close, rsiLen)
 [macdLine, signalLine, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
 volSMA = ta.sma(volume, volLen)
 volRatio = volSMA > 0 ? volume / volSMA : 0.0
 steadyVol = useVolFilter ? (volRatio > minVolMult and volRatio < maxVolMult) : true
+isVolBreakout = useVolBreakout ? volRatio > volBreakoutThresh : false
 
 rangeNow = ta.ema(high - low, rangeLen)
 avgRange = ta.sma(rangeNow, rangeLen)
 tinyRange = rangeNow < avgRange * 0.8
 wideRange = rangeNow > avgRange * 1.2
 
-bounceRsiLow = debugMode ? rsiBounceLow : 30
-bounceRsiHigh = debugMode ? rsiBounceHigh : 70
-oversoldBounce = ta.crossover(rsi, bounceRsiLow)
-rsiOversoldZone = rsi >= bounceRsiLow and rsi <= bounceRsiLow + 10
+//──────────────────────────────────────────────
+// 🪄 BOUNCE TRIGGERS (With Fallback)
+//──────────────────────────────────────────────
+oversoldBounce = ta.crossover(rsi, rsiBounceLow)
+overboughtRejection = ta.crossunder(rsi, rsiBounceHigh)
+rsiOversoldZone = rsi >= rsiBounceLow and rsi <= rsiBounceLow + 10
+rsiOverboughtZone = rsi >= rsiBounceHigh - 10 and rsi <= rsiBounceHigh
 macdShrinkingRed = macdHist < 0 and macdHist > macdHist[1]
+macdShrinkingGreen = macdHist > 0 and macdHist < macdHist[1]
 higherLow = low > low[1]
+lowerHigh = high < high[1]
 volTickUp = volume > volume[1]
 greenBar = close > open
 redBar = close < open
 higherVolConfirm = volume > volSMA * minVolMult
 
-overboughtRejection = ta.crossunder(rsi, bounceRsiHigh)
-rsiOverboughtZone = rsi >= bounceRsiHigh - 10 and rsi <= bounceRsiHigh
-macdShrinkingGreen = macdHist > 0 and macdHist < macdHist[1]
-lowerHigh = high < high[1]
-
-bounceTriggerLong = oversoldBounce or (rsiOversoldZone and macdShrinkingRed and higherLow and volTickUp)
-bounceTriggerShort = overboughtRejection or (rsiOverboughtZone and macdShrinkingGreen and lowerHigh and volTickUp)
+bounceTriggerLong = (rsiOversoldZone and macdShrinkingRed and higherLow and volTickUp) or oversoldBounce
+bounceTriggerShort = (rsiOverboughtZone and macdShrinkingGreen and lowerHigh and volTickUp) or overboughtRejection
 
 volDemand = greenBar and higherVolConfirm
 volPressure = redBar and higherVolConfirm
 indecision = not higherVolConfirm and not tinyRange
 
 //──────────────────────────────────────────────
-// 1H CONFIRM (Light: RSI + SMA if enabled)
+// 🕐 1 H CONFIRM + 4 H BIAS
+//──────────────────────────────────────────────
 htfClose_1h = request.security(syminfo.tickerid, "60", close, lookahead=barmerge.lookahead_off)
 sma20_1h = request.security(syminfo.tickerid, "60", ta.sma(close, smaLen), lookahead=barmerge.lookahead_off)
 rsi_1h = request.security(syminfo.tickerid, "60", ta.rsi(close, rsiLen), lookahead=barmerge.lookahead_off)
 [macdLine_1h, signalLine_1h, macdHist_1h] = request.security(syminfo.tickerid, "60", ta.macd(close, macdFast, macdSlow, macdSig), lookahead=barmerge.lookahead_off)
-volRatio_1h = request.security(syminfo.tickerid, "60", volume / ta.sma(volume, volLen), lookahead=barmerge.lookahead_off)
-steadyVol_1h = volRatio_1h > minVolMult and volRatio_1h < maxVolMult
-
 priceBull_1h = htfClose_1h > sma20_1h
 priceBear_1h = htfClose_1h < sma20_1h
 rsiBull_1h = rsi_1h > 50
 rsiBear_1h = rsi_1h < 50
 macdBull_1h = macdLine_1h > signalLine_1h
 macdBear_1h = macdLine_1h < signalLine_1h
+bullConfirm_1h = use1HConfirm ? (macdBull_1h and rsiBull_1h and priceBull_1h) : true
+bearConfirm_1h = use1HConfirm ? (macdBear_1h and rsiBear_1h and priceBear_1h) : true
 
-bullConfirm_1h = debugMode or (use1HConfirm ? (lightHTF ? (rsiBull_1h and priceBull_1h) : (macdBull_1h and rsiBull_1h and priceBull_1h and steadyVol_1h)) : true)
-bearConfirm_1h = debugMode or (use1HConfirm ? (lightHTF ? (rsiBear_1h and priceBear_1h) : (macdBear_1h and rsiBear_1h and priceBear_1h and steadyVol_1h)) : true)
-
-//──────────────────────────────────────────────
-// 4H BIAS (Light: RSI + SMA if enabled)
-rsi_4h = request.security(syminfo.tickerid, "240", ta.rsi(close, rsiLen), lookahead=barmerge.lookahead_off)
+htfClose_4h = request.security(syminfo.tickerid, "240", close, lookahead=barmerge.lookahead_off)
 sma20_4h = request.security(syminfo.tickerid, "240", ta.sma(close, smaLen), lookahead=barmerge.lookahead_off)
+rsi_4h = request.security(syminfo.tickerid, "240", ta.rsi(close, rsiLen), lookahead=barmerge.lookahead_off)
 [macdLine_4h, signalLine_4h, macdHist_4h] = request.security(syminfo.tickerid, "240", ta.macd(close, macdFast, macdSlow, macdSig), lookahead=barmerge.lookahead_off)
-volRatio_4h = request.security(syminfo.tickerid, "240", volume / ta.sma(volume, volLen), lookahead=barmerge.lookahead_off)
-volConfirmBull_4h = request.security(syminfo.tickerid, "240", (volume > ta.sma(volume, volLen) * minVolMult) and (close > open), lookahead=barmerge.lookahead_off)
-volConfirmBear_4h = request.security(syminfo.tickerid, "240", (volume > ta.sma(volume, volLen) * minVolMult) and (close < open), lookahead=barmerge.lookahead_off)
-
-priceBull_4h = close > sma20_4h
-priceBear_4h = close < sma20_4h
+priceBull_4h = htfClose_4h > sma20_4h
+priceBear_4h = htfClose_4h < sma20_4h
 rsiBull_4h = rsi_4h > rsiBullThresh
 rsiBear_4h = rsi_4h < rsiBearThresh
 macdBull_4h = macdHist_4h > 0
 macdBear_4h = macdHist_4h < 0
-
-bullBias_4h = debugMode or (use4HFilter ? (lightHTF ? (rsiBull_4h and priceBull_4h) : (macdBull_4h and rsiBull_4h and volConfirmBull_4h)) : true)
-bearBias_4h = debugMode or (use4HFilter ? (lightHTF ? (rsiBear_4h and priceBear_4h) : (macdBear_4h and rsiBear_4h and volConfirmBear_4h)) : true)
-
-//──────────────────────────────────────────────
-// SIGNALS
-//──────────────────────────────────────────────
-longValid = bullBias_4h and bullConfirm_1h and bounceTriggerLong and volDemand and not indecision
-shortValid = bearBias_4h and bearConfirm_1h and bounceTriggerShort and volPressure and not indecision
+bullBias_4h = use4HFilter ? (macdBull_4h and rsiBull_4h) : true
+bearBias_4h = use4HFilter ? (macdBear_4h and rsiBear_4h) : true
 
 //──────────────────────────────────────────────
-// ENTRIES & EXITS
+// ⚡ SIGNALS (Expanded Logic)
 //──────────────────────────────────────────────
-if longValid
+validVol = (isVolBreakout or not indecision)
+longValid = ( (bullBias_4h or bullConfirm_1h) and bounceTriggerLong and volDemand and adxVal > minAdxEntry and validVol )
+shortValid = ( (bearBias_4h or bearConfirm_1h) and bounceTriggerShort and volPressure and adxVal > minAdxEntry and validVol )
+
+//──────────────────────────────────────────────
+// 📈 ENTRIES / EXITS (Bar-Close Confirmed)
+//──────────────────────────────────────────────
+if barstate.isconfirmed and longValid
     strategy.entry("Long", strategy.long)
     if useTPSL
-        strategy.exit("Long Exit", "Long", profit=tpPct, loss=slPct, trail_points=useTrail ? trailPct * 100 : na, trail_offset=useTrail ? trailPct * 100 : na)
+        strategy.exit("Long Exit", from_entry="Long", profit=tpPct, loss=slPct, trail_points=useTrail ? trailPct * syminfo.mintick * 100 : na, trail_offset=useTrail ? trailPct * syminfo.mintick * 100 : na)
 
-if shortValid
+if barstate.isconfirmed and shortValid
     strategy.entry("Short", strategy.short)
     if useTPSL
-        strategy.exit("Short Exit", "Short", profit=tpPct, loss=slPct, trail_points=useTrail ? trailPct * 100 : na, trail_offset=useTrail ? trailPct * 100 : na)
+        strategy.exit("Short Exit", from_entry="Short", profit=tpPct, loss=slPct, trail_points=useTrail ? trailPct * syminfo.mintick * 100 : na, trail_offset=useTrail ? trailPct * syminfo.mintick * 100 : na)
 
 if shortValid and strategy.position_size > 0
     strategy.close("Long")
-
 if longValid and strategy.position_size < 0
     strategy.close("Short")
 
-// Time Exit
 if strategy.position_size != 0 and strategy.opentrades > 0
     barsSinceEntry = bar_index - strategy.opentrades.entry_bar_index(0)
     if barsSinceEntry > maxBarsInTrade
         strategy.close_all("Time Exit")
 
 //──────────────────────────────────────────────
-// VISUALS
+// 🎨 VISUALS / PANEL / ALERTS
 //──────────────────────────────────────────────
 bgcolor(steadyVol and tinyRange ? color.new(color.yellow, 90) : na)
 
@@ -156,7 +160,7 @@ if showEmojis
 
 plotshape(longValid, "Long", shape.triangleup, location.belowbar, color.green, size=size.small)
 plotshape(shortValid, "Short", shape.triangledown, location.abovebar, color.red, size=size.small)
-plot(sma20, "SMA20", color.blue, 2)
+plot(sma20, "SMA20", color.blue, linewidth=2)
 
 // Equity Curve
 plot(strategy.equity, "Equity", color.purple, display=display.pane)
@@ -171,22 +175,12 @@ plot(bounceTriggerShort ? -2 : na, "Bounce S", color.orange, display=display.dat
 // PANEL
 //──────────────────────────────────────────────
 if showPanel
-    var table statusTbl = table.new(position.top_right, 1, 7, bgcolor=color.new(color.black, 80), border_width=1)
+    var table t = table.new(position.top_right, 1, 6, bgcolor=color.new(color.black, 80))
     biasTxt = bullBias_4h ? "🟢 Bull" : bearBias_4h ? "🔴 Bear" : "⚪ Neutral"
     confirmTxt = bullConfirm_1h ? "🟢 1H OK" : bearConfirm_1h ? "🔴 1H OK" : "⚪ Neutral"
-    entryTxt = bounceTriggerLong or bounceTriggerShort ? "📍 Zone" : "⏳ Wait"
     moodTxt = steadyVol and tinyRange ? "🟡 Anxious" : volRatio < 1 ? "🌿 Calm" : wideRange ? "🔥 Active" : "⚪ Quiet"
-    
-    table.cell(statusTbl, 0, 0, "4H Bias", bgcolor=color.gray, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 1, biasTxt, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 2, "1H Confirm", bgcolor=color.gray, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 3, confirmTxt, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 4, "Entry", bgcolor=color.gray, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 5, entryTxt + "\n" + moodTxt, text_color=color.white, text_size=size.small)
-    table.cell(statusTbl, 0, 6, "Vol: " + str.tostring(volRatio, "#.##") + "x", text_color=color.white, text_size=size.small)
+    table.cell(t, 0, 0, "4H Bias", bgcolor=color.gray, text_color=color.white)
+    table.cell(t, 0, 1, biasTxt + "\n" + confirmTxt + "\n" + moodTxt, text_color=color.white)
 
-//──────────────────────────────────────────────
-// ALERTS
-//──────────────────────────────────────────────
-alertcondition(longValid, "Long Signal", "🟢 T7 Long Aligned")
-alertcondition(shortValid, "Short Signal", "🔴 T7 Short Aligned")
+alertcondition(longValid, "Long Signal", "🟢 T7 v2.2 Long Aligned")
+alertcondition(shortValid, "Short Signal", "🔴 T7 v2.2 Short Aligned")
