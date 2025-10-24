@@ -2,72 +2,71 @@
 **Author:** Mr O  
 **Version:** v1.6  
 **Date:** 2025-10-23  
-**Type:** Strategy Script (Pine Script v5)  
-**Purpose:** Multi-Timeframe Market Emotion Mapping for Sentiment Learning and Reversal Recognition  
+**Type:** Strategy / Visualizer (Pine Script v5)  
+**Purpose:** Multi-Timeframe Market Emotion Mapping for Sentiment Learning & Reversal Recognition  
 
 ---
 
 ## 🧩 Overview
-**MES v1.6** expands on the original single-timeframe Market Emotion Strategy by introducing a full **multi-timeframe (MTF) sentiment system**.  
-It tracks market “moods” — *Fear, Capitulation, Hope, Confidence, Greed, Indecision, and Neutral* — across **15 M, 1 H, 4 H** timeframes and aligns them into a single, readable dashboard.
+**MES v1.6** transforms the earlier single-timeframe “Market Emotion Strategy” into a complete **multi-timeframe (MTF)** emotional analysis tool.  
+It reads and visualizes trader sentiment (*Fear, Capitulation, Hope, Confidence, Greed, Indecision, Neutral*) on **15 M / 1 H / 4 H** charts, providing a live emotional map of the market.
 
-The goal is to help traders visually **understand emotional flow** across market layers and learn how short-term sentiment transitions forecast longer-term conviction.
+This version focuses on **clarity, clean compile, and learning utility** — no SSI yet, but with stable MTF sentiment logic and dock visualization.
 
 ---
 
 ## 🧭 Purpose
-- To translate raw volume, range, and candle-body behavior into *emotional context*.  
-- To show how sentiment evolves across **scales of participation**: retail (15 M), institutional (4 H), and structural trend (1 H).  
-- To create a *training tool* for developing emotional pattern recognition — not just an entry system.  
-- To support studying when emotions align (trend continuation) or diverge (pullbacks or reversals).
+- To turn price + volume + range data into readable **emotional context**.  
+- To help traders recognize how **sentiment transitions** form short-term reversals or longer-term conviction shifts.  
+- To build a **training chart** for pattern recognition — not a signal-only system.  
+- To visualize emotional alignment across multiple time horizons for deeper learning.
 
 ---
 
-## ⚙️ Core Additions in v1.6
+## ⚙️ Core Additions & Improvements
 | Category | Description |
 |-----------|--------------|
-| **✅ Multi-Timeframe Data** | Added `request.security()` calls for **15 M, 1 H, 4 H** data streams. Each computes independent volume, range, and body ratios. |
-| **📊 Smoothed Ratios** | Implemented EMA smoothing for `volRatio` and `rngRatio` → reduces flickering between moods. |
-| **🧠 Strength Filter** | Added candle-body × volume weighting (`strength`) so weak emotions are filtered out. |
-| **🎨 Dock Panel Redesign** | Dock now displays separate sentiment rows for each timeframe (native, 15 M, 1 H, 4 H). Uses color + arrow cues for instant emotional direction. |
-| **🧮 Sentiment Sync Index (SSI)** | New optional indicator scoring alignment from **−3 (bearish)** → **+3 (bullish)**; displayed numerically and plotted for study. |
-| **🔔 Alerts** | Added alert conditions for *Extreme Greed* and *Capitulation* to notify high-emotion events. |
-| **🧹 Clean Compile** | Removed local-scope plot/bgcolor issues, unified variable naming, and improved NA-safety with helper function `bnz()`. |
+| **✅ Multi-Timeframe Data** | Added `request.security()` for **15 M**, **1 H**, and **4 H** candles. Each timeframe computes its own volume, range, and candle-body ratios. |
+| **📊 Smoothed Ratios** | Introduced EMA-smoothed `volRatioSm` and `rngRatioSm` to reduce mood flicker on volatile pairs. |
+| **🧠 Strength Weighting** | Implemented `strength = bodyRatio × volRatio` so that only emotionally strong candles trigger defined moods. |
+| **🎨 Dock Panel Redesign** | New 4-row dock summary: **Chart / 15 M / 1 H / 4 H** with arrows, colors, and ratio readouts for instant multi-TF sentiment view. |
+| **🔔 Emotion Alerts** | Added built-in alerts for **Extreme Greed** and **Capitulation** to catch high-emotion extremes. |
+| **🧹 Clean Compile & Refactor** | Fixed scope errors (`bgcolor` / `plot` in local scope), standardized variables, and added the `bnz()` helper for NA-safe bool checks. |
+| **⚙️ MTF Toggle** | Added `useMTF` input to enable or disable multi-timeframe logic for simplified testing or faster loading. |
 
 ---
 
 ## 🧠 Learning Framework
 | Timeframe | Role | What You Learn |
 |------------|------|----------------|
-| **4 H** | Institutional Mood | Recognize macro conviction and absorption patterns. |
-| **1 H** | Trend Filter | Train on emotional synchronization vs. divergence. |
-| **15 M** | Tactical Mood | Detect first sentiment shifts before broader confirmation. |
-| **All TFs Combined** | Emotional Alignment | Understand how emotions cascade: *Fear → Hope → Greed* (bull cycle) or *Greed → Fear → Capitulation* (bear cycle). |
+| **4 H** | Institutional Mood | Spot macro conviction, accumulation, or absorption zones. |
+| **1 H** | Trend Filter | Recognize when intraday sentiment supports or conflicts with higher-timeframe trend. |
+| **15 M** | Tactical Mood | Identify early emotional flips that often precede reversals. |
+| **All TFs** | Sentiment Alignment | Understand how emotions cascade → *Fear → Hope → Greed* or *Greed → Fear → Capitulation*. |
 
 ---
 
-## 📈 Reading the Output
-- **Background Colors:** visualize the dominant emotion on your active chart.  
-- **Labels:** mark mood transitions (`Fear → Hope`, `Confidence → Indecision`, etc.).  
-- **Volume Columns:** color-coded to the active emotion.  
-- **Dock Panel:** compact sentiment summary across all TFs for instant alignment check.  
-- **Sentiment Sync Index (SSI):** numerical alignment gauge (−3 to +3).
+## 📈 Visual Output
+- **Background Colors:** show dominant mood on the active chart.  
+- **Labels:** display mood transitions (`Fear → Hope`, `Confidence → Indecision`, etc.).  
+- **Volume Columns:** color-coded to the detected emotion.  
+- **Dock Panel:** compact summary of each timeframe’s sentiment and strength ratios.  
+- **Alerts:** notify when extreme emotions occur.
 
 ---
 
 ## 🧰 Developer Notes
-- Compatible with Pine Script v5+ (TradingView).  
-- Strategy entries remain optional; main focus = sentiment visualization.  
-- Code structured with global-scope visuals for performance stability.  
-- Initial capital set to **620 USD** to match real trading test environment.  
-- `useMTF` toggle allows running in single-TF mode for simplified study.
+- Designed for Pine Script v5 (TradingView).  
+- Strategy engine included for optional entry/exit backtesting.  
+- `initial_capital = 620 USD` to match real-account testing baseline.  
+- MTF calls optimized for stability; 3-EMA smoothing ensures consistent visuals.  
+- SSI block intentionally omitted (reserved for v1.7 update).  
 
 ---
 
 ## 🪄 Summary
-**MES v1.6** shifts the script from a simple emotional color map into a **learning instrument** —  
-a real-time teaching chart for how *market psychology evolves* across layers of participation.  
-It’s ideal for anyone studying how short-term emotion flips lead to, or fake out, major trend reversals.
+**MES v1.6** is a **clean-compiled, multi-timeframe emotion map** that teaches how price + volume behavior translates into crowd psychology.  
+It helps traders *see* how emotional tone shifts between the 15 M, 1 H, and 4 H layers — perfect for learning when a “mood reversal” truly reflects a structural change versus a short-term reaction.
 
 ---
 
