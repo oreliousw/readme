@@ -1,9 +1,9 @@
-// (c) Mr O - Market Emotion Strategy v1.6 (Multi-TF Panel with MTF Support, Clean Compile)
-//@version=5
-strategy("MES v1.6", shorttitle="MES v1.6", overlay=true, initial_capital=620, default_qty_type=strategy.percent_of_equity, default_qty_value=50, pyramiding=0)
+// (c) Mr O - Market Emotion Strategy v1.6.2 (v6 Clean, Bool Fix)
+//@version=6
+strategy("MES v1.6.2", shorttitle="MES v1.6.2", overlay=true, initial_capital=620, default_qty_type=strategy.percent_of_equity, default_qty_value=50, pyramiding=0)
 
 //──────────────────────────────────────────────
-// INPUTS
+// 🔍 INPUTS
 //──────────────────────────────────────────────
 volLen   = input.int(20, "Volume SMA Length")
 rngLen   = input.int(14, "Range SMA Length")
@@ -14,14 +14,20 @@ showDock = input.bool(true, "Show Dock Panel Summary")
 useMTF   = input.bool(true, "Enable Multi-Timeframe Analysis (15M, 1H, 4H)")
 
 //──────────────────────────────────────────────
-// MTF DATA FETCH
+// 🔍 MTF DATA FETCH FUNCTION
 //──────────────────────────────────────────────
-[o15, c15, h15, l15, v15] = request.security(syminfo.tickerid, "15",  [open, close, high, low, volume])
-[o1h, c1h, h1h, l1h, v1h] = request.security(syminfo.tickerid, "60",  [open, close, high, low, volume])
-[o4h, c4h, h4h, l4h, v4h] = request.security(syminfo.tickerid, "240", [open, close, high, low, volume])
+// Helper to grab OHLCV as array for clean security calls
+f_mtf_array() => [open, close, high, low, volume]
 
 //──────────────────────────────────────────────
-// CALCULATIONS - NATIVE TF
+// 📡 MTF DATA FETCH
+//──────────────────────────────────────────────
+[o15, c15, h15, l15, v15] = request.security(syminfo.tickerid, "15", f_mtf_array())
+[o1h, c1h, h1h, l1h, v1h] = request.security(syminfo.tickerid, "60", f_mtf_array())
+[o4h, c4h, h4h, l4h, v4h] = request.security(syminfo.tickerid, "240", f_mtf_array())
+
+//──────────────────────────────────────────────
+// 🧮 CALCULATIONS - NATIVE TF
 //──────────────────────────────────────────────
 trNow      = ta.tr(true)
 volSMA     = ta.sma(volume, volLen)
@@ -32,10 +38,10 @@ volRatioSm = ta.ema(volRatio, 3)
 rngRatioSm = ta.ema(rngRatio, 3)
 isBull     = close > open
 isBear     = close < open
-bodyRatio  = math.abs(close - open) / nz(trNow, 0.0001)  // avoid /0
+bodyRatio  = math.abs(close - open) / nz(trNow, 0.0001)  // Avoid divide-by-zero
 
 //──────────────────────────────────────────────
-// CALCULATIONS - 15M
+// 🧮 CALCULATIONS - 15M
 //──────────────────────────────────────────────
 tr15        = math.max(h15 - l15, math.abs(h15 - c15[1]), math.abs(l15 - c15[1]))
 volSMA15    = ta.sma(v15, volLen)
@@ -49,7 +55,7 @@ isBear15    = c15 < o15
 bodyRatio15 = math.abs(c15 - o15) / nz(tr15, 0.0001)
 
 //──────────────────────────────────────────────
-// CALCULATIONS - 1H
+// 🧮 CALCULATIONS - 1H
 //──────────────────────────────────────────────
 tr1h        = math.max(h1h - l1h, math.abs(h1h - c1h[1]), math.abs(l1h - c1h[1]))
 volSMA1h    = ta.sma(v1h, volLen)
@@ -63,7 +69,7 @@ isBear1h    = c1h < o1h
 bodyRatio1h = math.abs(c1h - o1h) / nz(tr1h, 0.0001)
 
 //──────────────────────────────────────────────
-// CALCULATIONS - 4H
+// 🧮 CALCULATIONS - 4H
 //──────────────────────────────────────────────
 tr4h        = math.max(h4h - l4h, math.abs(h4h - c4h[1]), math.abs(l4h - c4h[1]))
 volSMA4h    = ta.sma(v4h, volLen)
@@ -77,7 +83,7 @@ isBear4h    = c4h < o4h
 bodyRatio4h = math.abs(c4h - o4h) / nz(tr4h, 0.0001)
 
 //──────────────────────────────────────────────
-// EMOTION STATES - NATIVE
+// 😟 EMOTION STATES - NATIVE
 //──────────────────────────────────────────────
 strength     = bodyRatio * volRatio
 fear         = isBear and volRatioSm > 1.2 and rngRatioSm > 1.1 and strength > 0.5
@@ -89,7 +95,7 @@ indecision   = rngRatioSm < 0.7 or (math.abs(close - open) < (trNow * 0.25))
 neutral      = not (fear or capitulation or hope or confidence or greed or indecision)
 
 //──────────────────────────────────────────────
-// EMOTION STATES - 15M / 1H / 4H
+// 😟 EMOTION STATES - 15M / 1H / 4H
 //──────────────────────────────────────────────
 strength15     = bodyRatio15 * volRatio15
 fear15         = isBear15 and volRatioSm15 > 1.2 and rngRatioSm15 > 1.1 and strength15 > 0.5
@@ -119,7 +125,7 @@ indecision4h   = rngRatioSm4h < 0.7 or (math.abs(c4h - o4h) < (tr4h * 0.25))
 neutral4h      = not (fear4h or capitulation4h or hope4h or confidence4h or greed4h or indecision4h)
 
 //──────────────────────────────────────────────
-// VISUALS: BACKGROUND + LABELS
+// 🎨 VISUALS: BACKGROUND + LABELS
 //──────────────────────────────────────────────
 bgColor = fear ? color.new(color.red, 75) :
           capitulation ? color.new(color.maroon, 70) :
@@ -143,7 +149,7 @@ if showLbls and mood != lastMood
     lastMood := mood
 
 //──────────────────────────────────────────────
-// VISUALS: VOLUME COLUMNS
+// 🎨 VISUALS: VOLUME COLUMNS
 //──────────────────────────────────────────────
 volCol = fear ? color.red :
          capitulation ? color.maroon :
@@ -155,18 +161,12 @@ volCol = fear ? color.red :
 plot(showVolC ? volume : na, style=plot.style_columns, color=volCol, title="Emotion Volume")
 
 //──────────────────────────────────────────────
-// HELPERS
+// 📈 STRATEGY LOGIC
 //──────────────────────────────────────────────
-bnz(b) =>
-    not na(b) and b
-
-//──────────────────────────────────────────────
-// STRATEGY LOGIC
-//──────────────────────────────────────────────
-wasFearOrCap_native = bnz(fear[1]) or bnz(capitulation[1])
-wasGreed_native     = bnz(greed[1])
-wasFearOrCap = useMTF ? (wasFearOrCap_native or bnz(fear15[1]) or bnz(capitulation15[1]) or bnz(fear1h[1]) or bnz(capitulation1h[1]) or bnz(fear4h[1]) or bnz(capitulation4h[1])) : wasFearOrCap_native
-wasGreed    = useMTF ? (wasGreed_native or bnz(greed15[1]) or bnz(greed1h[1]) or bnz(greed4h[1])) : wasGreed_native
+wasFearOrCap_native = fear[1] or capitulation[1]
+wasGreed_native     = greed[1]
+wasFearOrCap = useMTF ? (wasFearOrCap_native or fear15[1] or capitulation15[1] or fear1h[1] or capitulation1h[1] or fear4h[1] or capitulation4h[1]) : wasFearOrCap_native
+wasGreed    = useMTF ? (wasGreed_native or greed15[1] or greed1h[1] or greed4h[1]) : wasGreed_native
 
 toHopeOrConf  = (hope or confidence) and wasFearOrCap
 toIndecOrFear = (indecision or fear) and wasGreed
@@ -182,13 +182,13 @@ if strategy.position_size < 0 and (hope or confidence)
     strategy.close("Short_Emotion", comment="Short Exit: Opposite Mood")
 
 //──────────────────────────────────────────────
-// ALERTS
+// 🔔 ALERTS
 //──────────────────────────────────────────────
 alertcondition(greed, "Extreme Greed", "Market showing strong greed sentiment.")
 alertcondition(capitulation, "Capitulation", "Possible panic bottom forming.")
 
 //──────────────────────────────────────────────
-// SENTIMENT SYNC INDEX (SSI) + DOCK PANEL
+// 📊 SENTIMENT SYNC INDEX (SSI) + DOCK PANEL
 //──────────────────────────────────────────────
 scoreTF(tfHope, tfConf, tfGreed, tfFear, tfCapit, tfIndec) =>
     (tfHope ? 1 : 0) + (tfConf ? 1.5 : 0) + (tfGreed ? 2 : 0) - (tfFear ? 1 : 0) - (tfCapit ? 1.5 : 0) - (tfIndec ? 0.5 : 0)
@@ -206,7 +206,7 @@ ssiColor = ssi > 1   ? color.new(color.lime, 60) :
            ssi > 0   ? color.new(color.green, 70):
            ssi < 0   ? color.new(color.orange, 70):
                        color.new(color.gray, 80)
-plot(ssi, "Sentiment Sync Index", color=color.new(color.aqua, 40), linewidth=2)
+plot(ssi, "Sentiment Sync Index", color=color.new(color.aqua, 40), linewidth=2)  // Tip: Scale chart or split pane for visibility
 
 // Create dock before filling cells
 var table dock = na
@@ -235,7 +235,3 @@ if showDock
         table.cell(dock, 0, 3, str.format("4H: {0} {1}\nVol {2}x Range {3}x", arrow4h, mood4htxt, str.tostring(volRatio4h, "#.##"), str.tostring(rngRatio4h, "#.##")), text_color=color.white, bgcolor=dockColor4h, text_size=size.small)
 
         table.cell(dock, 0, 4, str.format("Sync Index: {0}", str.tostring(ssi, "#.##")), text_color=color.white, bgcolor=ssiColor, text_size=size.small)
-
-                 indecision4h ? "Indecision" :
-                 neutral4h ? "Neutral" : "Unknown"
-        table.cell(dock, 0, 3, str.format("4H: {0} {1}\nVol {2}x Range {3}x", arrow4h, mood4h, str.tostring(volRatio4h, "#.##"), str.tostring(rngRatio4h, "#.##")), text_color=color.white, bgcolor=dockColor4h, text_size=size.small)
