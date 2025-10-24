@@ -1,6 +1,6 @@
-// (c) Mr O - Market Emotion Strategy v1.6.2 (v6 Clean, Bool Fix)
+// (c) Mr O - Market Emotion Strategy v1.6.5 (Neutral BG Fixed, OANDA-Ready)
 //@version=6
-strategy("MES v1.6.2", shorttitle="MES v1.6.2", overlay=true, initial_capital=620, default_qty_type=strategy.percent_of_equity, default_qty_value=50, pyramiding=0)
+strategy("MES v1.6.5", shorttitle="MES v1.6.5", overlay=true, initial_capital=620, default_qty_type=strategy.percent_of_equity, default_qty_value=50, pyramiding=0)
 
 //──────────────────────────────────────────────
 // 🔍 INPUTS
@@ -125,69 +125,6 @@ indecision4h   = rngRatioSm4h < 0.7 or (math.abs(c4h - o4h) < (tr4h * 0.25))
 neutral4h      = not (fear4h or capitulation4h or hope4h or confidence4h or greed4h or indecision4h)
 
 //──────────────────────────────────────────────
-// 🎨 VISUALS: BACKGROUND + LABELS
-//──────────────────────────────────────────────
-bgColor = fear ? color.new(color.red, 75) :
-          capitulation ? color.new(color.maroon, 70) :
-          hope ? color.new(color.green, 80) :
-          confidence ? color.new(color.lime, 70) :
-          greed ? color.new(color.yellow, 70) :
-          indecision ? color.new(color.gray, 85) :
-          neutral ? color.new(color.silver, 85) : na
-bgcolor(showBg ? bgColor : na)
-
-var string lastMood = ""
-mood = fear ? "Fear" :
-       capitulation ? "Capitulation" :
-       hope ? "Hope" :
-       confidence ? "Confidence" :
-       greed ? "Greed" :
-       indecision ? "Indecision" :
-       neutral ? "Neutral" : "Unknown"
-if showLbls and mood != lastMood
-    label.new(bar_index, high, mood, style=label.style_label_down, textcolor=color.white, color=color.new(color.black, 60), size=size.tiny)
-    lastMood := mood
-
-//──────────────────────────────────────────────
-// 🎨 VISUALS: VOLUME COLUMNS
-//──────────────────────────────────────────────
-volCol = fear ? color.red :
-         capitulation ? color.maroon :
-         hope ? color.green :
-         confidence ? color.lime :
-         greed ? color.yellow :
-         indecision ? color.gray :
-         neutral ? color.silver : color.gray
-plot(showVolC ? volume : na, style=plot.style_columns, color=volCol, title="Emotion Volume")
-
-//──────────────────────────────────────────────
-// 📈 STRATEGY LOGIC
-//──────────────────────────────────────────────
-wasFearOrCap_native = fear[1] or capitulation[1]
-wasGreed_native     = greed[1]
-wasFearOrCap = useMTF ? (wasFearOrCap_native or fear15[1] or capitulation15[1] or fear1h[1] or capitulation1h[1] or fear4h[1] or capitulation4h[1]) : wasFearOrCap_native
-wasGreed    = useMTF ? (wasGreed_native or greed15[1] or greed1h[1] or greed4h[1]) : wasGreed_native
-
-toHopeOrConf  = (hope or confidence) and wasFearOrCap
-toIndecOrFear = (indecision or fear) and wasGreed
-
-if toHopeOrConf
-    strategy.entry("Long_Emotion", strategy.long, comment="Fear->Hope/Confidence")
-if toIndecOrFear
-    strategy.entry("Short_Emotion", strategy.short, comment="Greed->Indecision/Fear")
-
-if strategy.position_size > 0 and (greed or indecision)
-    strategy.close("Long_Emotion", comment="Long Exit: Opposite Mood")
-if strategy.position_size < 0 and (hope or confidence)
-    strategy.close("Short_Emotion", comment="Short Exit: Opposite Mood")
-
-//──────────────────────────────────────────────
-// 🔔 ALERTS
-//──────────────────────────────────────────────
-alertcondition(greed, "Extreme Greed", "Market showing strong greed sentiment.")
-alertcondition(capitulation, "Capitulation", "Possible panic bottom forming.")
-
-//──────────────────────────────────────────────
 // 📊 SENTIMENT SYNC INDEX (SSI) + DOCK PANEL
 //──────────────────────────────────────────────
 scoreTF(tfHope, tfConf, tfGreed, tfFear, tfCapit, tfIndec) =>
@@ -207,6 +144,15 @@ ssiColor = ssi > 1   ? color.new(color.lime, 60) :
            ssi < 0   ? color.new(color.orange, 70):
                        color.new(color.gray, 80)
 plot(ssi, "Sentiment Sync Index", color=color.new(color.aqua, 40), linewidth=2)  // Tip: Scale chart or split pane for visibility
+
+// Early mood calc for dock
+mood = fear ? "Fear" :
+       capitulation ? "Capitulation" :
+       hope ? "Hope" :
+       confidence ? "Confidence" :
+       greed ? "Greed" :
+       indecision ? "Indecision" :
+       neutral ? "Neutral" : "Unknown"
 
 // Create dock before filling cells
 var table dock = na
@@ -232,6 +178,84 @@ if showDock
         dockColor4h = isBull4h ? color.new(color.lime, 70) : color.new(color.red, 70)
         arrow4h     = isBull4h ? "↑" : isBear4h ? "↓" : "→"
         mood4htxt   = fear4h ? "Fear" : capitulation4h ? "Capitulation" : hope4h ? "Hope" : confidence4h ? "Confidence" : greed4h ? "Greed" : indecision4h ? "Indecision" : "Neutral"
+        table.cell(dock, 0, 3, str.format("4H: {0} {1}\nVol {2}x Range {3}x", arrow4h, mood4htxt, str.tostring(volRatio4h, "#.##"), str.tostring(rngRatio4h, "#.##")), text_color=color.white, bgcolor=dockColor4h, text_size=size.small)
+
+        table.cell(dock, 0, 4, str.format("Sync Index: {0}", str.tostring(ssi, "#.##")), text_color=color.white, bgcolor=ssiColor, text_size=size.small)
+
+//──────────────────────────────────────────────
+// 🔢 SSI THRESHOLDS
+//──────────────────────────────────────────────
+ssiLongOK = ssi > 0.3
+ssiShortOK = ssi < -0.3
+ssiNeutral = not (ssiLongOK or ssiShortOK)
+
+//──────────────────────────────────────────────
+// 🎨 VISUALS: BACKGROUND + LABELS
+//──────────────────────────────────────────────
+bgColor = fear ? color.new(color.red, 75) :
+          capitulation ? color.new(color.maroon, 70) :
+          hope ? color.new(color.green, 80) :
+          confidence ? color.new(color.lime, 70) :
+          greed ? color.new(color.yellow, 70) :
+          indecision ? color.new(color.gray, 85) :
+          neutral ? color.new(color.silver, 85) : na
+finalBg = ssiNeutral ? color.new(color.gray, 90) : showBg ? bgColor : na
+bgcolor(finalBg)
+
+var string lastMood = ""
+if showLbls and mood != lastMood
+    label.new(bar_index, high, mood, style=label.style_label_down, textcolor=color.white, color=color.new(color.black, 60), size=size.tiny)
+    lastMood := mood
+
+//──────────────────────────────────────────────
+// 🎨 VISUALS: VOLUME COLUMNS
+//──────────────────────────────────────────────
+volCol = fear ? color.red :
+         capitulation ? color.maroon :
+         hope ? color.green :
+         confidence ? color.lime :
+         greed ? color.yellow :
+         indecision ? color.gray :
+         neutral ? color.silver : color.gray
+plot(showVolC ? volume : na, style=plot.style_columns, color=volCol, title="Emotion Volume")
+
+//──────────────────────────────────────────────
+// 🧠 SSI-Filtered Strategy Logic
+//──────────────────────────────────────────────
+wasFearOrCap_native = fear[1] or capitulation[1]
+wasGreed_native     = greed[1]
+wasFearOrCap = useMTF ? (wasFearOrCap_native or fear15[1] or capitulation15[1] or fear1h[1] or capitulation1h[1] or fear4h[1] or capitulation4h[1]) : wasFearOrCap_native
+wasGreed    = useMTF ? (wasGreed_native or greed15[1] or greed1h[1] or greed4h[1]) : wasGreed_native
+
+toHopeOrConf  = (hope or confidence) and wasFearOrCap
+toIndecOrFear = (indecision or fear) and wasGreed
+
+// Longs only when SSI bullish
+if toHopeOrConf and ssiLongOK
+    strategy.entry("Long_Emotion", strategy.long, comment="SSI-Filtered Long")
+
+// Shorts only when SSI bearish
+if toIndecOrFear and ssiShortOK
+    strategy.entry("Short_Emotion", strategy.short, comment="SSI-Filtered Short")
+
+// Optional: prevent new trades in neutral zone
+if ssiNeutral
+    strategy.cancel_all()
+
+// Exits unchanged
+if strategy.position_size > 0 and (greed or indecision)
+    strategy.close("Long_Emotion", comment="Long Exit: Opposite Mood")
+if strategy.position_size < 0 and (hope or confidence)
+    strategy.close("Short_Emotion", comment="Short Exit: Opposite Mood")
+
+//──────────────────────────────────────────────
+// 🔔 ALERTS
+//──────────────────────────────────────────────
+alertcondition(greed, "Extreme Greed", "Market showing strong greed sentiment.")
+alertcondition(capitulation, "Capitulation", "Possible panic bottom forming.")
+// Alerts for strong alignment
+alertcondition(ssi > 1.5, "Strong Bullish Sync", "All TFs aligned bullish.")
+alertcondition(ssi < -1.5, "Strong Bearish Sync", "All TFs aligned bearish.")
         table.cell(dock, 0, 3, str.format("4H: {0} {1}\nVol {2}x Range {3}x", arrow4h, mood4htxt, str.tostring(volRatio4h, "#.##"), str.tostring(rngRatio4h, "#.##")), text_color=color.white, bgcolor=dockColor4h, text_size=size.small)
 
         table.cell(dock, 0, 4, str.format("Sync Index: {0}", str.tostring(ssi, "#.##")), text_color=color.white, bgcolor=ssiColor, text_size=size.small)
