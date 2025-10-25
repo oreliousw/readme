@@ -1,6 +1,11 @@
-// (c) Mr O - Market Emotion Strategy v1.6.5 (Neutral BG Fixed, OANDA-Ready)
+// (c) Mr O - Market Emotion Strategy v1.6.6 (Pip Simulator Merged, OANDA-Ready)
 //@version=6
-strategy("MES v1.6.5", shorttitle="MES v1.6.5", overlay=true, initial_capital=620, default_qty_type=strategy.percent_of_equity, default_qty_value=50, pyramiding=0)
+strategy("MES v1.6.6", shorttitle="MES v1.6.6", overlay=true,
+     initial_capital=620,
+     default_qty_type=strategy.fixed,
+     commission_type=strategy.commission.cash_per_order,
+     commission_value=0.0,
+     pyramiding=0)
 
 //──────────────────────────────────────────────
 // 🔍 INPUTS
@@ -12,6 +17,9 @@ showLbls = input.bool(true, "Show Emotion Labels")
 showVolC = input.bool(true, "Color Volume Bars")
 showDock = input.bool(true, "Show Dock Panel Summary")
 useMTF   = input.bool(true, "Enable Multi-Timeframe Analysis (15M, 1H, 4H)")
+pipTargetUSD = input.float(1.0, "Target $/Pip Value")
+leverage = input.float(50.0, "Leverage (Simulated)")
+showDebug = input.bool(true, "Show Debug Info")
 
 //──────────────────────────────────────────────
 // 🔍 MTF DATA FETCH FUNCTION
@@ -190,6 +198,32 @@ ssiShortOK = ssi < -0.3
 ssiNeutral = not (ssiLongOK or ssiShortOK)
 
 //──────────────────────────────────────────────
+// 💵 DYNAMIC PIP VALUE SIMULATOR
+//──────────────────────────────────────────────
+// Most majors use 0.0001 per pip; JPY pairs use 0.01
+pipSize = if str.contains(syminfo.ticker, "JPY")
+    0.01
+else
+    0.0001
+// USD value per unit per pip for USD quote pairs (simplified)
+usdPerUnit = pipSize
+unitsNeeded = pipTargetUSD / usdPerUnit
+// Scale down slightly for leverage realism
+unitsSim = unitsNeeded / leverage
+
+//──────────────────────────────────────────────
+// 🧾 DEBUG PANEL (OPTIONAL)
+//──────────────────────────────────────────────
+if showDebug
+    var label debugLbl = na
+    label.delete(debugLbl)
+    debugTxt = str.format("Pair: {0}\nPip Size: {1}\nTarget $/Pip: {2}\nUnits ≈ {3}\nEffective Leverage: {4}",
+         syminfo.ticker, str.tostring(pipSize), str.tostring(pipTargetUSD),
+         str.tostring(math.round(unitsSim)), str.tostring(leverage))
+    debugLbl := label.new(bar_index, high, debugTxt, style=label.style_label_left,
+         textcolor=color.white, color=color.new(color.blue,70))
+
+//──────────────────────────────────────────────
 // 🎨 VISUALS: BACKGROUND + LABELS
 //──────────────────────────────────────────────
 bgColor = fear ? color.new(color.red, 75) :
@@ -232,11 +266,11 @@ toIndecOrFear = (indecision or fear) and wasGreed
 
 // Longs only when SSI bullish
 if toHopeOrConf and ssiLongOK
-    strategy.entry("Long_Emotion", strategy.long, comment="SSI-Filtered Long")
+    strategy.entry("Long_Emotion", strategy.long, qty=unitsSim, comment="SSI-Filtered Long")
 
 // Shorts only when SSI bearish
 if toIndecOrFear and ssiShortOK
-    strategy.entry("Short_Emotion", strategy.short, comment="SSI-Filtered Short")
+    strategy.entry("Short_Emotion", strategy.short, qty=unitsSim, comment="SSI-Filtered Short")
 
 // Optional: prevent new trades in neutral zone
 if ssiNeutral
@@ -256,6 +290,3 @@ alertcondition(capitulation, "Capitulation", "Possible panic bottom forming.")
 // Alerts for strong alignment
 alertcondition(ssi > 1.5, "Strong Bullish Sync", "All TFs aligned bullish.")
 alertcondition(ssi < -1.5, "Strong Bearish Sync", "All TFs aligned bearish.")
-        table.cell(dock, 0, 3, str.format("4H: {0} {1}\nVol {2}x Range {3}x", arrow4h, mood4htxt, str.tostring(volRatio4h, "#.##"), str.tostring(rngRatio4h, "#.##")), text_color=color.white, bgcolor=dockColor4h, text_size=size.small)
-
-        table.cell(dock, 0, 4, str.format("Sync Index: {0}", str.tostring(ssi, "#.##")), text_color=color.white, bgcolor=ssiColor, text_size=size.small)
